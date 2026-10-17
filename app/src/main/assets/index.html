@@ -44,15 +44,19 @@ h3{font-size:13px;color:var(--muted);margin:0 0 4px;text-transform:uppercase;let
 </div>
 <script>setTimeout(function(){var e=document.getElementById("splash");if(!e)return;e.style.opacity=0;setTimeout(function(){if(e.parentNode)e.parentNode.removeChild(e)},500)},1800)</script>
 <div style="text-align:center;font-weight:800;font-size:17px;letter-spacing:.5px;color:var(--accent);padding:12px 0 0">🏏 DSF CRICKET CLUB</div>
+<div id="net" style="text-align:center;font-size:12px;color:var(--muted);padding-top:2px"></div>
 <main id="app"></main>
-<div style="text-align:center;font-size:12px;color:var(--muted);padding:6px 0 18px">DSF Cricket Club · Version 4 (Splash · History · Series · MoM)</div>
+<div style="text-align:center;font-size:12px;color:var(--muted);padding:6px 0 18px">DSF Cricket Club · Version 5 (Online · History · Series · MoM)</div>
 <script>
 let S=null,editing=false,DB=null,RO=false,LAST=0,ready=!window.claude,PIC={};
 try{PIC=JSON.parse(localStorage.getItem("cs2pic"))||{}}catch(e){}
 try{S=JSON.parse(localStorage.getItem("cs2"))}catch(e){}
+let CFG={},cfgMode=false,SIGL="",SIGE="",POLLN=0,SYNC_FAIL=false;
+try{CFG=JSON.parse(localStorage.getItem("cs2cfg"))||{}}catch(e){}
+const ONL=!!(CFG.url&&CFG.role&&CFG.role!=="off");
 let HIST=[],histMode=false,histId=null;
 try{HIST=JSON.parse(localStorage.getItem("cs2hist"))||[]}catch(e){}
-function saveHist(){try{localStorage.setItem("cs2hist",JSON.stringify(HIST))}catch(e){}}
+function saveHist(){try{localStorage.setItem("cs2hist",JSON.stringify(HIST))}catch(e){};onlinePut("hist",HIST)}
 function archive(){
  if(!S)return;
  if(!S.mid)S.mid=Date.now();
@@ -66,7 +70,8 @@ function archive(){
 }
 let SER=[],serMode=false,serId=null;
 try{SER=JSON.parse(localStorage.getItem("cs2ser"))||[]}catch(e){}
-function saveSer(){try{localStorage.setItem("cs2ser",JSON.stringify(SER))}catch(e){}}
+if(ONL&&CFG.role==="viewer"){RO=true;S=null;HIST=[];SER=[]}
+function saveSer(){try{localStorage.setItem("cs2ser",JSON.stringify(SER))}catch(e){};onlinePut("ser",SER)}
 const serOf=id=>SER.find(x=>x.sid===id);
 const serName=id=>{const x=serOf(id);return x?x.name:""};
 function winner(M){const a=M.inns[0],c=M.inns[1];if(!c)return -1;if(c.r>a.r)return 1-M.first;if(c.r<a.r)return M.first;return -1}
@@ -84,7 +89,92 @@ function serTag(){
  const sr=S&&S.sid&&serOf(S.sid);
  return sr?`<div class="t" style="margin:-6px 0 10px;cursor:pointer" onclick="serMode=true;serId=${S.sid};render()">🏆 ${esc(sr.name)} · Match ${S.sno}/${sr.total}</div>`:"";
 }
+function setNet(t){const e=document.getElementById("net");if(e)e.textContent=t}
+function netPost(name,o){
+ return fetch(CFG.url+"/"+name+".json?x-http-method-override=PUT",{method:"POST",body:JSON.stringify(o)})
+  .then(r=>{if(!r.ok)throw 0;SYNC_FAIL=false;setNet("● Online · scoring")})
+  .catch(()=>{SYNC_FAIL=true;setNet("○ Offline · net vandhadhum sync aagum")});
+}
+function onlinePut(name,val){if(!ONL||CFG.role!=="scorer")return;netPost(name,{t:Date.now(),json:JSON.stringify(val)})}
+let _pt=null;
+function onlinePushLive(){
+ if(!ONL||CFG.role!=="scorer")return;
+ clearTimeout(_pt);
+ _pt=setTimeout(()=>{let o="";if(S){const {h,...rest}=S;o=JSON.stringify(rest)}netPost("live",{t:Date.now(),json:o})},300);
+}
+function onlinePushAll(){onlinePushLive();onlinePut("hist",HIST);onlinePut("ser",SER);onlinePut("pics",PIC)}
+async function netGet(name){
+ const r=await fetch(CFG.url+"/"+name+".json");if(!r.ok)throw 0;
+ const j=await r.json();return j&&j.json?JSON.parse(j.json):null;
+}
+async function adoptRemote(soft){
+ const [lv,h,sr,p]=await Promise.all([netGet("live"),netGet("hist"),netGet("ser"),netGet("pics")]);
+ if(soft&&(S||HIST.length||SER.length))return;
+ S=lv?Object.assign(lv,{h:[]}):null;HIST=h||[];SER=sr||[];PIC=p||{};
+ try{
+  if(S)localStorage.setItem("cs2",JSON.stringify(S));else localStorage.removeItem("cs2");
+  localStorage.setItem("cs2hist",JSON.stringify(HIST));localStorage.setItem("cs2ser",JSON.stringify(SER));localStorage.setItem("cs2pic",JSON.stringify(PIC));
+ }catch(e){}
+}
+async function pollOnline(){
+ try{
+  const r=await fetch(CFG.url+"/live.json");if(!r.ok)throw 0;
+  const j=await r.json();
+  let extra=null;
+  const sl0=JSON.stringify(j),ns=j&&j.json?JSON.parse(j.json):null;
+  if(POLLN++%5===0||(sl0!==SIGL&&(!ns||ns.stage==="done"))){const [h,sr,p]=await Promise.all([netGet("hist"),netGet("ser"),netGet("pics")]);extra=[h||[],sr||[],p||{}]}
+  let lc=false,ec=false;
+  const sl=JSON.stringify(j);
+  if(sl!==SIGL){SIGL=sl;S=j&&j.json?Object.assign(JSON.parse(j.json),{h:[]}):null;LAST=(j&&j.t)||Date.now();lc=true}
+  if(extra){const se=JSON.stringify(extra);if(se!==SIGE){SIGE=se;HIST=extra[0];SER=extra[1];PIC=extra[2];ec=true}}
+  setNet("● Live · viewing");
+  if(!cfgMode&&(ec||(lc&&!histMode&&!serMode)))render();
+ }catch(e){setNet("○ Offline · connecting…")}
+}
+function startOnline(){
+ if(!ONL)return;
+ if(CFG.role==="viewer"){setNet("○ Connecting…");pollOnline();setInterval(pollOnline,4000);return}
+ setNet("● Online · scoring");
+ (async()=>{
+  try{
+   if(!S&&!HIST.length&&!SER.length){await adoptRemote(true);render()}
+   else onlinePushAll();
+  }catch(e){SYNC_FAIL=true;setNet("○ Offline · net vandhadhum sync aagum")}
+ })();
+ setInterval(()=>{if(SYNC_FAIL)onlinePushAll()},15000);
+}
+function cfgView(){
+ const bs='style="background:var(--card);color:var(--text);border-color:var(--line)"';
+ $("app").innerHTML=`<h1>⚙ Online setup</h1><div class="card">
+ <label>Firebase Database URL</label><input id="cu" value="${esc(CFG.url||"")}" placeholder="https://xxxx-default-rtdb.firebaseio.com">
+ <label>Indha phone-oda role</label><select id="cr">
+ <option value="off" ${!CFG.role||CFG.role==="off"?"selected":""}>Off (offline mattum)</option>
+ <option value="scorer" ${CFG.role==="scorer"?"selected":""}>Scorer (naan score podren)</option>
+ <option value="viewer" ${CFG.role==="viewer"?"selected":""}>Viewer (live paakka mattum)</option></select>
+ <button class="p" onclick="saveCfg()">Save and restart</button>
+ <button class="p" ${bs} onclick="testCfg()">Test connection</button>
+ ${CFG.role==="scorer"?`<button class="p" ${bs} onclick="takeOver()">Take over scoring (innoru phone-la irundhu)</button>`:""}
+ <button class="p" ${bs} onclick="cfgMode=false;render()">← Back</button></div>
+ <div class="t">Oru neram-la oru phone mattum Scorer-ah irukkanum. Matravanga ellaarum Viewer.</div>`;
+}
+function saveCfg(){
+ const u=$("cu").value.trim().replace(/\/+$/,""),r=$("cr").value;
+ if(r!=="off"&&!/^https:\/\/.+/.test(u)){alert("Database URL sariya kudunga (https:// nu aarambikkanum)");return}
+ try{localStorage.setItem("cs2cfg",JSON.stringify({url:u,role:r}))}catch(e){}
+ location.reload();
+}
+async function testCfg(){
+ const u=$("cu").value.trim().replace(/\/+$/,"");
+ try{const r=await fetch(u+"/live.json");if(!r.ok)throw 0;alert("Connected ✔")}
+ catch(e){alert("Connect aagala. URL-ah, internet-ah, Firebase rules-ah check pannunga.")}
+}
+async function takeOver(){
+ if(!confirm("Indha phone-la irukkura match data azhinju, online-la irukkura latest match inge varum. Seri-ya?"))return;
+ try{await adoptRemote();alert("Mudinjadhu. Ippo nee thaan Scorer.");location.reload()}
+ catch(e){alert("Connect aagala. Internet-ah check pannunga.")}
+}
 function appBack(){
+ if(cfgMode){cfgMode=false;render();return 1}
  if(serMode){if(serId)serId=null;else serMode=false;render();return 1}
  if(histMode){if(histId)histId=null;else histMode=false;render();return 1}
  return 0;
@@ -110,7 +200,8 @@ function setup(){
  <label>Batting first</label><select id="f"><option value="0">Team 1</option><option value="1">Team 2</option></select>
  <button class="p" onclick="startMatch()">Start Match</button>
  <button class="p" style="background:var(--card);color:var(--text);border-color:var(--line)" onclick="histMode=true;render()">📜 Match History (${HIST.length})</button>
- <button class="p" style="background:var(--card);color:var(--text);border-color:var(--line)" onclick="serMode=true;serId=null;render()">🏆 Series (${SER.length})</button></div>`;
+ <button class="p" style="background:var(--card);color:var(--text);border-color:var(--line)" onclick="serMode=true;serId=null;render()">🏆 Series (${SER.length})</button>
+ <button class="p" style="background:var(--card);color:var(--text);border-color:var(--line)" onclick="cfgMode=true;render()">⚙ Online setup</button></div>`;
 }
 function lines(id){return $(id).value.split("\n").map(s=>s.trim()).filter(Boolean)}
 function startMatch(){
@@ -294,6 +385,7 @@ function mosHTML(sr,st){
  h+=a.arr.slice(0,3).map(x=>`<div class="r"><span>${esc(sr.P[x.t][x.i])} <span class="t">${esc(sr.N[x.t])}</span></span><b>${x.pts} pts</b></div>`).join("");
  h+=`<div class="t" style="margin:6px 0">Points = runs + 20 × wickets + 25 × Man of the Match</div>
  <label>Maatha vendumna select pannunga</label><select onchange="setMos(${sr.sid},this.value)">${playerOpts(sr.P,sr.N,sr.mos||"",`<option value="" ${sr.mos?"":"selected"}>Auto (best performance)</option>`)}</select></div>`;
+ if(RO)h=h.replace(/<label>Maatha[\s\S]*?<\/select>/,"");
  return h;
 }
 function setMos(sid,v){const sr=serOf(sid);if(!sr)return;sr.mos=v||null;saveSer();render()}
@@ -323,7 +415,7 @@ function serView(){
   h+=mosHTML(sr,st);
   if(S&&S.sid===sr.sid&&S.stage!=="done"){
    h+=`<div class="card"><div class="t">Match ${S.sno} nadandhukittu irukku</div><button class="p" onclick="serMode=false;render()">▶ Resume Match</button></div>`;
-  }else if(st.ms.length<sr.total){
+  }else if(st.ms.length<sr.total&&!RO){
    h+=`<div class="card"><h3>Match ${Math.max(0,...st.ms.map(m=>m.sno))+1} of ${sr.total}</h3>
    <label>Batting first</label><select id="sf"><option value="0">${esc(sr.N[0])}</option><option value="1">${esc(sr.N[1])}</option></select>
    <button class="p" onclick="startSeriesMatch(${sr.sid})">Start Match</button></div>`;
@@ -336,7 +428,7 @@ function serView(){
    <div class="r"><span>${esc(m.N[1-m.first])}</span><b>${b?b.r+"/"+b.w:"-"}</b></div>
    <div style="color:var(--accent);font-weight:700;margin-top:6px">${esc(m.res||"")}</div>${(()=>{const q=momInfo(m);return q?`<div class="t" style="margin-top:4px">⭐ MoM: ${esc(q.name)}</div>`:""})()}</div>`;
   });
-  h+=`<div class="sm card"><button onclick="serId=null;render()">← Series</button><button onclick="serDel(${sr.sid})" style="color:var(--red)">🗑 Delete</button></div>`;
+  h+=`<div class="sm card"><button onclick="serId=null;render()">← Series</button>${RO?"":`<button onclick="serDel(${sr.sid})" style="color:var(--red)">🗑 Delete</button>`}</div>`;
  }else{
   h=`<h1>🏆 Series</h1>`;
   if(!SER.length)h+=`<div class="card"><div class="t" style="text-align:center">Innum series illa. Keela button-ah click pannitu puthu series create pannunga.</div></div>`;
@@ -347,7 +439,7 @@ function serView(){
    <div class="r"><span>${esc(x.N[0])}</span><b>${st.w[0]}</b></div><div class="r"><span>${esc(x.N[1])}</span><b>${st.w[1]}</b></div>
    ${st.res?`<div style="color:var(--accent);font-weight:700;margin-top:6px">${esc(st.res)}</div>${(()=>{const q=serMos(x);return q?`<div class="t" style="margin-top:4px">⭐ Man of the Series: ${esc(q.nm)}</div>`:""})()}`:""}</div>`;
   });
-  h+=`<button class="p" onclick="serId='new';render()">+ New Series</button>
+  h+=`${RO?"":`<button class="p" onclick="serId='new';render()">+ New Series</button>`}
   <button class="p" style="background:var(--card);color:var(--text);border-color:var(--line)" onclick="serMode=false;render()">← Back</button>`;
  }
  $("app").innerHTML=h;
@@ -389,13 +481,13 @@ function histView(){
   <div class="r"><span><b>${esc(M.N[s])}</b></span><b>${b?b.r+"/"+b.w+' <span class="t">('+ov(b.b)+")</span>":"-"}</b></div>
   <div style="color:var(--accent);font-weight:700;margin-top:6px">${esc(M.res||"")}</div>${(()=>{const q=momInfo(M);return q?`<div class="t" style="margin-top:4px">⭐ MoM: ${esc(q.name)}</div>`:""})()}</div>`;
  });
- h+=`<button class="p" onclick="histMode=false;render()">← Back</button>`;
+ h+=`<button class="p" style="background:var(--card);color:var(--text);border-color:var(--line)" onclick="histMode=false;cfgMode=true;render()">⚙ Online setup</button><button class="p" onclick="histMode=false;render()">← Back</button>`;
  $("app").innerHTML=h;
 }
 function histDetail(M){
  let h=`<div class="card"><div class="t">${new Date(M.date).toLocaleDateString()} · ${M.ov} overs a side</div>
  <h1 style="margin:6px 0">${esc(M.N[0])} vs ${esc(M.N[1])}</h1><div class="res">${esc(M.res||"")}</div></div>`;
- h+=momHTML(M,`setHistMom(${M.mid},this.value)`);
+ h+=momHTML(M,RO?"":`setHistMom(${M.mid},this.value)`);
  [0,1].forEach(k=>{
   const c=M.inns[k];if(!c)return;
   const t=k===0?M.first:1-M.first,w=1-t,bp=M.P[t],wp=M.P[w];
@@ -410,7 +502,7 @@ function histDetail(M){
   }
   h+=`</div>`;
  });
- h+=`<div class="sm card"><button onclick="histId=null;render()">← List</button><button onclick="histDel(${M.mid})" style="color:var(--red)">🗑 Delete</button></div>`;
+ h+=`<div class="sm card"><button onclick="histId=null;render()">← List</button>${RO?"":`<button onclick="histDel(${M.mid})" style="color:var(--red)">🗑 Delete</button>`}</div>`;
  return h;
 }
 function histDel(id){
@@ -419,9 +511,10 @@ function histDel(id){
 }
 function render(){
  if(!ready){$("app").innerHTML='<div class="t" style="padding:48px 0;text-align:center">Loading…</div>';return}
+ if(cfgMode){cfgView();return}
  if(serMode){serView();return}
  if(histMode){histView();return}
- if(!S){if(RO){$("app").innerHTML='<h1>🏏 Live Cricket</h1><div class="card"><div class="res">Match innum start aagala</div><div class="t" style="text-align:center">Scorer start pannadhum inge live-ah theriyum</div></div>';return}setup();return}
+ if(!S){if(RO){$("app").innerHTML='<h1>🏏 Live Cricket</h1><div class="card"><div class="res">Match innum start aagala</div><div class="t" style="text-align:center">Scorer start pannadhum inge live-ah theriyum</div></div><div class="sm card"><button onclick="histMode=true;render()">📜 History</button><button onclick="serMode=true;serId=null;render()">🏆 Series</button><button onclick="cfgMode=true;render()">⚙ Online</button></div>';return}setup();return}
  if(editing){editView();return}
  const c=cur(),b=bi(),bt=S.N[b],bwT=S.N[1-b],bp=S.P[b],wp=S.P[1-b],left=S.ov*6-c.b;
  let info=`<div class="t">Run rate ${c.b?(c.r*6/c.b).toFixed(2):"0.00"}</div>`;
@@ -452,7 +545,7 @@ function render(){
   h+=`<div class="card"><div class="res">${esc(bt)} ${c.r}/${c.w}<br><span class="t">${esc(bwT)} need ${c.r+1} to win</span></div>
   ${RO?`<div class="t" style="text-align:center">2nd innings start aagum…</div>`:`<button class="p" onclick="second()">Start 2nd Innings</button>`}</div>`;
  }else h+=`<div class="card"><div class="res">${result()}</div>${S.sid&&serOf(S.sid)&&!RO?`<button class="p" onclick="serBack()">🏆 Back to Series</button>`:""}</div>${momHTML(S,RO?"":"setMom(this.value)")}`;
- h+=RO?`<div class="sm card"><button onclick="shareImage()">🖼 Share Image</button><button onclick="downloadPdf()">📄 PDF</button></div>`:`<div class="sm card"><button onclick="undo()" ${S.h.length?"":"disabled"}>↩ Undo</button><button onclick="editing=true;render()">✏️ Names</button><button onclick="histMode=true;render()">📜 History</button><button onclick="newMatch()">New Match</button></div><div class="sm card"><button onclick="shareImage()">🖼 Share Image</button><button onclick="downloadPdf()">📄 PDF</button></div>`;
+ h+=RO?`<div class="sm card"><button onclick="histMode=true;render()">📜 History</button><button onclick="serMode=true;serId=null;render()">🏆 Series</button><button onclick="cfgMode=true;render()">⚙ Online</button></div><div class="sm card"><button onclick="shareImage()">🖼 Share Image</button><button onclick="downloadPdf()">📄 PDF</button></div>`:`<div class="sm card"><button onclick="undo()" ${S.h.length?"":"disabled"}>↩ Undo</button><button onclick="editing=true;render()">✏️ Names</button><button onclick="histMode=true;render()">📜 History</button><button onclick="newMatch()">New Match</button></div><div class="sm card"><button onclick="shareImage()">🖼 Share Image</button><button onclick="downloadPdf()">📄 PDF</button></div>`;
  const seen=bp.length;
  h+=`<div class="card"><h3>Batting · ${esc(bt)}</h3>`+bp.slice(0,seen).map((n,i)=>{
   const x=c.bat[i],live=S.stage==="play"&&!x.o,yet=!(x.b>0||x.o||i===c.st||i===c.ns);
@@ -467,7 +560,7 @@ function av(t,i,z){
  return u?`<img src="${u}" width="${z}" height="${z}" style="border-radius:50%;object-fit:cover;vertical-align:middle">`:`<span style="display:inline-flex;width:${z}px;height:${z}px;border-radius:50%;background:var(--line);color:var(--muted);align-items:center;justify-content:center;font-size:${Math.round(z*.45)}px;font-weight:700;vertical-align:middle">${esc(n.charAt(0).toUpperCase())}</span>`;
 }
 function savePics(){try{localStorage.setItem("cs2pic",JSON.stringify(PIC))}catch(e){};pushPics()}
-function pushPics(){if(!DB||RO)return;DB.doc("match/pics").set({json:JSON.stringify(PIC),t:Date.now()}).catch(()=>{})}
+function pushPics(){onlinePut("pics",PIC);if(!DB||RO)return;DB.doc("match/pics").set({json:JSON.stringify(PIC),t:Date.now()}).catch(()=>{})}
 function setPic(t,i,inp){
  const f=inp.files&&inp.files[0];if(!f)return;
  const r=new FileReader();
@@ -531,7 +624,7 @@ async function shareImage(){
  const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
  sendFile(blob,(S.N[0]+'-vs-'+S.N[1]).replace(/[^\w-]+/g,'_')+'-scoreboard.png','image/png');
 }
-function push(){
+function push(){onlinePushLive();
  if(!DB||RO)return;
  const o={json:"",t:Date.now()};
  if(S){const {h,...rest}=S;o.json=JSON.stringify(rest)}
@@ -557,6 +650,7 @@ function push(){
  ready=true;render();
 })();
 if(S&&S.stage==="done")archive();
+startOnline();
 render();
 </script>
 </body>
