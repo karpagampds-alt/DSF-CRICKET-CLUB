@@ -46,7 +46,7 @@ h3{font-size:13px;color:var(--muted);margin:0 0 4px;text-transform:uppercase;let
 <div style="text-align:center;font-weight:800;font-size:17px;letter-spacing:.5px;color:var(--accent);padding:12px 0 0">🏏 DSF CRICKET CLUB</div>
 <div id="net" style="text-align:center;font-size:12px;color:var(--muted);padding-top:2px"></div>
 <main id="app"></main>
-<div style="text-align:center;font-size:12px;color:var(--muted);padding:6px 0 18px">DSF Cricket Club · Version 5 (Online · History · Series · MoM)</div>
+<div style="text-align:center;font-size:12px;color:var(--muted);padding:6px 0 18px">DSF Cricket Club · Version 6 (Date · Online · History · Series)</div>
 <script>
 let S=null,editing=false,DB=null,RO=false,LAST=0,ready=!window.claude,PIC={};
 try{PIC=JSON.parse(localStorage.getItem("cs2pic"))||{}}catch(e){}
@@ -54,6 +54,11 @@ try{S=JSON.parse(localStorage.getItem("cs2"))}catch(e){}
 let CFG={},cfgMode=false,SIGL="",SIGE="",POLLN=0,SYNC_FAIL=false;
 try{CFG=JSON.parse(localStorage.getItem("cs2cfg"))||{}}catch(e){}
 const ONL=!!(CFG.url&&CFG.role&&CFG.role!=="off");
+const fmtD=t=>new Date(t).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+const fmtT=t=>new Date(t).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+const fmtDT=t=>fmtD(t)+" · "+fmtT(t);
+const ymd=t=>{const d=new Date(t);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+let histDate="";
 let HIST=[],histMode=false,histId=null;
 try{HIST=JSON.parse(localStorage.getItem("cs2hist"))||[]}catch(e){}
 function saveHist(){try{localStorage.setItem("cs2hist",JSON.stringify(HIST))}catch(e){};onlinePut("hist",HIST)}
@@ -63,7 +68,7 @@ function archive(){
  const i=HIST.findIndex(x=>x.mid===S.mid);
  if(S.stage==="done"){
   if(!S.mom)S.mom=suggestMom(S);
-  const m=JSON.parse(JSON.stringify(S));m.h=[];m.res=result();m.date=i>=0?HIST[i].date:Date.now();
+  const m=JSON.parse(JSON.stringify(S));m.h=[];m.res=result();m.date=i>=0?HIST[i].date:(S.sd||Date.now());
   if(i>=0)HIST[i]=m;else HIST.unshift(m);
   saveHist();
  }else if(i>=0){HIST.splice(i,1);saveHist()}
@@ -208,7 +213,7 @@ function startMatch(){
  const pa=lines("pa"),pb=lines("pb");
  if(pa.length<2||pb.length<2){alert("Rendu team-ukkum player names (one per line, min 2) kudunga");return}
  const first=+$("f").value;
- S={N:[$("a").value.trim()||"Team A",$("b").value.trim()||"Team B"],P:[pa,pb],ov:Math.max(1,+$("ov").value||6),first,inn:0,stage:"play",h:[]};
+ S={N:[$("a").value.trim()||"Team A",$("b").value.trim()||"Team B"],P:[pa,pb],ov:Math.max(1,+$("ov").value||6),first,inn:0,stage:"play",h:[],sd:Date.now()};
  S.inns=[mkInn(S.P[first].length),null];
  save();render();
 }
@@ -282,7 +287,7 @@ function pdfBytes(lines){
 function cardLines(){
  const L=[],p=(s,b)=>L.push((b?"##":"")+s),f=(s,k)=>String(s).slice(0,k).padEnd(k),g=(v,k)=>String(v).padStart(k);
  p(S.N[0]+" vs "+S.N[1],1);
- p(S.ov+" overs a side | "+new Date().toLocaleDateString());p("");
+ p(S.ov+" overs a side | "+fmtD(S.sd||Date.now()));p("");
  [0,1].forEach(k=>{
   const c=S.inns[k];if(!c)return;
   const t=k===0?S.first:1-S.first,w=1-t,bp=S.P[t],wp=S.P[w];
@@ -423,7 +428,7 @@ function serView(){
   st.ms.forEach(m=>{
    const a=m.inns[0],b=m.inns[1];
    h+=`<div class="card" style="cursor:pointer" onclick="serMode=false;histMode=true;histId=${m.mid};render()">
-   <div class="t">Match ${m.sno} · ${new Date(m.date).toLocaleDateString()}</div>
+   <div class="t">Match ${m.sno} · ${fmtD(m.date)}</div>
    <div class="r"><span>${esc(m.N[m.first])}</span><b>${a.r}/${a.w}</b></div>
    <div class="r"><span>${esc(m.N[1-m.first])}</span><b>${b?b.r+"/"+b.w:"-"}</b></div>
    <div style="color:var(--accent);font-weight:700;margin-top:6px">${esc(m.res||"")}</div>${(()=>{const q=momInfo(m);return q?`<div class="t" style="margin-top:4px">⭐ MoM: ${esc(q.name)}</div>`:""})()}</div>`;
@@ -454,7 +459,7 @@ function startSeriesMatch(id){
  const sr=serOf(id);if(!sr)return;
  if(S&&S.stage!=="done"&&!confirm("Oru match nadandhukittu irukku. Adha vittuttu puthu match start pannanuma?"))return;
  const first=+$("sf").value,st=serStats(sr);
- S={N:sr.N.slice(),P:[sr.P[0].slice(),sr.P[1].slice()],ov:sr.ov,first,inn:0,stage:"play",h:[],sid:sr.sid,sno:Math.max(0,...st.ms.map(m=>m.sno))+1};
+ S={N:sr.N.slice(),P:[sr.P[0].slice(),sr.P[1].slice()],ov:sr.ov,first,inn:0,stage:"play",h:[],sid:sr.sid,sd:Date.now(),sno:Math.max(0,...st.ms.map(m=>m.sno))+1};
  S.inns=[mkInn(S.P[first].length),null];
  serMode=false;save();render();
 }
@@ -472,11 +477,17 @@ function histView(){
   if(M){$("app").innerHTML=h+histDetail(M);return}
   histId=null;
  }
+ if(HIST.length)h+=`<div class="card"><label>📅 Date paarthu theda</label><input type="date" id="hd" value="${histDate}" onchange="histDate=this.value;render()">${histDate?`<button class="p" style="background:var(--card);color:var(--text);border-color:var(--line)" onclick="histDate='';render()">Ellaa matches-um kaattu</button>`:""}</div>`;
+ const list=HIST.filter(M=>!histDate||ymd(M.date)===histDate).sort((a,b)=>b.date-a.date);
  if(!HIST.length)h+=`<div class="card"><div class="t" style="text-align:center">Innum match history illa. Match mudinjadhum inge thaanaa save aagum.</div></div>`;
- HIST.forEach(M=>{
+ else if(!list.length)h+=`<div class="card"><div class="t" style="text-align:center">Indha date (${esc(fmtD(histDate+"T12:00:00"))})-la match illa.</div></div>`;
+ else if(histDate)h+=`<div class="t" style="margin:0 0 8px">${list.length} match${list.length===1?"":"es"} · ${esc(fmtD(histDate+"T12:00:00"))}</div>`;
+ let lastDay="";
+ list.forEach(M=>{
+  if(!histDate&&ymd(M.date)!==lastDay){lastDay=ymd(M.date);h+=`<h3 style="margin:14px 0 6px">${fmtD(M.date)}</h3>`}
   const f=M.first,s=1-f,a=M.inns[0],b=M.inns[1];
   h+=`<div class="card" style="cursor:pointer" onclick="histId=${M.mid};render()">
-  <div class="t">${new Date(M.date).toLocaleDateString()} · ${M.ov} overs${M.sid&&serName(M.sid)?" · 🏆 "+esc(serName(M.sid))+" M"+M.sno:""}</div>
+  <div class="t">${fmtT(M.date)} · ${M.ov} overs${M.sid&&serName(M.sid)?" · 🏆 "+esc(serName(M.sid))+" M"+M.sno:""}</div>
   <div class="r"><span><b>${esc(M.N[f])}</b></span><b>${a.r}/${a.w} <span class="t">(${ov(a.b)})</span></b></div>
   <div class="r"><span><b>${esc(M.N[s])}</b></span><b>${b?b.r+"/"+b.w+' <span class="t">('+ov(b.b)+")</span>":"-"}</b></div>
   <div style="color:var(--accent);font-weight:700;margin-top:6px">${esc(M.res||"")}</div>${(()=>{const q=momInfo(M);return q?`<div class="t" style="margin-top:4px">⭐ MoM: ${esc(q.name)}</div>`:""})()}</div>`;
@@ -485,7 +496,7 @@ function histView(){
  $("app").innerHTML=h;
 }
 function histDetail(M){
- let h=`<div class="card"><div class="t">${new Date(M.date).toLocaleDateString()} · ${M.ov} overs a side</div>
+ let h=`<div class="card"><div class="t">📅 ${fmtDT(M.date)} · ${M.ov} overs a side</div>
  <h1 style="margin:6px 0">${esc(M.N[0])} vs ${esc(M.N[1])}</h1><div class="res">${esc(M.res||"")}</div></div>`;
  h+=momHTML(M,RO?"":`setHistMom(${M.mid},this.value)`);
  [0,1].forEach(k=>{
@@ -502,8 +513,15 @@ function histDetail(M){
   }
   h+=`</div>`;
  });
+ if(!RO)h+=`<div class="card"><label>Match date maatha (venumna)</label><input type="date" value="${ymd(M.date)}" onchange="setHistDate(${M.mid},this.value)"></div>`;
  h+=`<div class="sm card"><button onclick="histId=null;render()">← List</button>${RO?"":`<button onclick="histDel(${M.mid})" style="color:var(--red)">🗑 Delete</button>`}</div>`;
  return h;
+}
+function setHistDate(mid,v){
+ const M=HIST.find(x=>x.mid===mid);if(!M||!v)return;
+ const o=new Date(M.date),n=new Date(v+"T00:00:00");
+ n.setHours(o.getHours(),o.getMinutes(),0,0);
+ M.date=n.getTime();saveHist();render();
 }
 function histDel(id){
  if(!confirm("Indha match-ah history-la irundhu delete pannanuma?"))return;
@@ -523,7 +541,7 @@ function render(){
   info=need>0?`<div class="t">Need <b>${need}</b> from <b>${left}</b> balls · Target ${S.inns[0].r+1}</div>`:"";
  }
  const prev=S.inn===1?`<div class="t">${esc(S.N[S.first])}: ${S.inns[0].r}/${S.inns[0].w} (${ov(S.inns[0].b)} ov)</div>`:"";
- let h=`<h1>🏏 ${esc(S.N[0])} vs ${esc(S.N[1])}</h1>${serTag()}${RO?`<div class="t" style="margin:-6px 0 10px"><span style="color:var(--red)">●</span> LIVE · updated ${new Date(LAST).toLocaleTimeString()}</div>`:""}
+ let h=`<h1>🏏 ${esc(S.N[0])} vs ${esc(S.N[1])}</h1>${serTag()}${S.sd?`<div class="t" style="margin:-6px 0 10px">📅 ${fmtDT(S.sd)}</div>`:""}${RO?`<div class="t" style="margin:-6px 0 10px"><span style="color:var(--red)">●</span> LIVE · updated ${new Date(LAST).toLocaleTimeString()}</div>`:""}
  <div class="card"><div class="t">${S.inn+1===1?"1st":"2nd"} innings · ${esc(bt)} batting</div>
  <div class="big">${c.r}/${c.w}</div><div class="t">${ov(c.b)} / ${S.ov} overs · ${maxW()-c.w} wickets left</div>${info}${prev}
  <div class="over">${thisOver(c).map(x=>`<div class="b ${x.t==="W"?"W":""}">${x.t}</div>`).join("")}</div></div>`;
@@ -593,7 +611,7 @@ async function shareImage(){
   let y=90;
   T('CRICKET SCOREBOARD',28,P,y,{b:1,c:'#3ddc97'});
   y+=75;T(S.N[0]+' vs '+S.N[1],54,P,y,{b:1});
-  y+=48;T(S.ov+' overs a side · '+new Date().toLocaleDateString(),26,P,y,{c:'#8fa0ae'});
+  y+=48;T(S.ov+' overs a side · '+fmtD(S.sd||Date.now()),26,P,y,{c:'#8fa0ae'});
   y+=80;
   if(S.stage==='done'){T(result(),42,P,y,{b:1,c:'#3ddc97'});const mm=momInfo(S);if(mm){y+=70;A(mm.t,mm.i,P+32,y-10,32);T('⭐ Man of the Match: '+mm.name,30,P+90,y,{b:1,c:'#ffd166',w:W-2*P-90})}}
   else{
