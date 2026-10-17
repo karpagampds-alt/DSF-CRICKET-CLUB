@@ -1,4 +1,4 @@
-# DSF Cricket Club - Android project
+#  - Android project
 
 ## Build the APK (Android Studio)
 1. Install Android Studio (free): https://developer.android.com/studio
