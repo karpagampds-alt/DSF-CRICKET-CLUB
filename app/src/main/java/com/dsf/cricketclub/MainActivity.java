@@ -72,7 +72,9 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (web.canGoBack()) web.goBack(); else super.onBackPressed();
+        web.evaluateJavascript(
+            "(function(){return typeof appBack==='function'?appBack():0})()",
+            v -> { if (!"1".equals(v)) MainActivity.super.onBackPressed(); });
     }
 
     /** Called from the page to share/save PDF and PNG scoreboards. */
